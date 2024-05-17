@@ -18,15 +18,16 @@ library SwapMath {
             uint256 amountOut
         )
     {
+        //计算买卖方向
         bool zeroForOne = sqrtPriceCurrentX96 >= sqrtPriceTargetX96;
-
+        //根据当前流动性和当前价格 和数量计算出 兑换后的价格△p
         sqrtPriceNextX96 = Math.getNextSqrtPriceFromInput(
             sqrtPriceCurrentX96,
             liquidity,
             amountRemaining,
             zeroForOne
         );
-
+        //计算 达到兑换后的价格 接收和支出的amount
         amountIn = Math.calcAmount0Delta(
             sqrtPriceCurrentX96,
             sqrtPriceNextX96,

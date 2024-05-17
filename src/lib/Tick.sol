@@ -15,7 +15,7 @@ library Tick {
         Tick.Info storage tickInfo = self[tick];
         uint128 liquidityBefore = tickInfo.liquidity;
         uint128 liquidityAfter = liquidityBefore + liquidityDelta;
-
+        //流动性更新的时候 判断要不要更新flag
         flipped = (liquidityAfter == 0) != (liquidityBefore == 0);
 
         if (liquidityBefore == 0) {

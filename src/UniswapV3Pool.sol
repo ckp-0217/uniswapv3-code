@@ -81,11 +81,11 @@ contract UniswapV3Pool {
     Slot0 public slot0;
 
     // Amount of liquidity, L.
-    uint128 public liquidity;
+    uint128 public liquidity;//总的流动性
 
-    mapping(int24 => Tick.Info) public ticks;
-    mapping(int16 => uint256) public tickBitmap;
-    mapping(bytes32 => Position.Info) public positions;
+    mapping(int24 => Tick.Info) public ticks;//记录所有的流动性
+    mapping(int16 => uint256) public tickBitmap;//位图记录是否有流动性
+    mapping(bytes32 => Position.Info) public positions;//记录用户的流动性
 
     constructor(
         address token0_,
@@ -113,10 +113,11 @@ contract UniswapV3Pool {
         ) revert InvalidTickRange();
 
         if (amount == 0) revert ZeroLiquidity();
+        //更新两端流动性
 
         bool flippedLower = ticks.update(lowerTick, amount);
         bool flippedUpper = ticks.update(upperTick, amount);
-
+        //流动性反转
         if (flippedLower) {
             tickBitmap.flipTick(lowerTick, 1);
         }
@@ -124,30 +125,31 @@ contract UniswapV3Pool {
         if (flippedUpper) {
             tickBitmap.flipTick(upperTick, 1);
         }
-
+        //更新当前用户的流动性
         Position.Info storage position = positions.get(
             owner,
             lowerTick,
             upperTick
         );
         position.update(amount);
-
+        //当前的价格区间
         Slot0 memory slot0_ = slot0;
-
+        //计算当前价格到 流动性边界需要的amount
+        //当前价到 区间顶部需要多少amount0
         amount0 = Math.calcAmount0Delta(
             TickMath.getSqrtRatioAtTick(slot0_.tick),
             TickMath.getSqrtRatioAtTick(upperTick),
             amount
         );
-
+        //当前价到 区间底部需要多少amount1
         amount1 = Math.calcAmount1Delta(
             TickMath.getSqrtRatioAtTick(slot0_.tick),
             TickMath.getSqrtRatioAtTick(lowerTick),
             amount
         );
-
+        //更新数量
         liquidity += uint128(amount);
-
+        //调用回调 
         uint256 balance0Before;
         uint256 balance1Before;
         if (amount0 > 0) balance0Before = balance0();
@@ -173,51 +175,55 @@ contract UniswapV3Pool {
         );
     }
 
+    
     function swap(
-        address recipient,
-        bool zeroForOne,
-        uint256 amountSpecified,
-        bytes calldata data
+        address recipient,//接收地址
+        bool zeroForOne,//兑换方向
+        uint256 amountSpecified,//兑换数量
+        bytes calldata data//calldate信息
     ) public returns (int256 amount0, int256 amount1) {
+        // 获取当前价格
         Slot0 memory slot0_ = slot0;
-
+        
+        //初始化兑换信息
         SwapState memory state = SwapState({
             amountSpecifiedRemaining: amountSpecified,
             amountCalculated: 0,
             sqrtPriceX96: slot0_.sqrtPriceX96,
             tick: slot0_.tick
         });
-
+        //直到用于兑换的token耗尽
         while (state.amountSpecifiedRemaining > 0) {
-            StepState memory step;
-
+            StepState memory step;//维护当前循环
+            //获取起始价格
             step.sqrtPriceStartX96 = state.sqrtPriceX96;
-
+            //寻找下一个tick
             (step.nextTick, ) = tickBitmap.nextInitializedTickWithinOneWord(
                 state.tick,
                 1,
                 zeroForOne
             );
-
+            //获取下一个tick的价格
             step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.nextTick);
-
+            //计算当前价格区间到下个价格区间可以取出 多少流动性
             (state.sqrtPriceX96, step.amountIn, step.amountOut) = SwapMath
                 .computeSwapStep(
                     step.sqrtPriceStartX96,
                     step.sqrtPriceNextX96,
-                    liquidity,
+                    liquidity,//这里假定只有一个流动性区间
                     state.amountSpecifiedRemaining
                 );
-
+            //调整当前的state 剩余和累计
             state.amountSpecifiedRemaining -= step.amountIn;
             state.amountCalculated += step.amountOut;
+            //调整tick
             state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
         }
-
+        //如果交易后 离开了当前流动性区间 价格和区间需要修正
         if (state.tick != slot0_.tick) {
             (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
         }
-
+        //调用callback
         (amount0, amount1) = zeroForOne
             ? (
                 int256(amountSpecified - state.amountSpecifiedRemaining),

@@ -12,11 +12,13 @@ library Math {
         uint160 sqrtPriceBX96,
         uint128 liquidity
     ) internal pure returns (uint256 amount0) {
+        //保证相减不是负
         if (sqrtPriceAX96 > sqrtPriceBX96)
             (sqrtPriceAX96, sqrtPriceBX96) = (sqrtPriceBX96, sqrtPriceAX96);
 
         require(sqrtPriceAX96 > 0);
-
+        //amount0 = L*(pB-pA)/pA*PB
+        //这里p都使用定点数 分子需要乘上定点数
         amount0 = divRoundingUp(
             mulDivRoundingUp(
                 (uint256(liquidity) << FixedPoint96.RESOLUTION),
@@ -36,7 +38,8 @@ library Math {
     ) internal pure returns (uint256 amount1) {
         if (sqrtPriceAX96 > sqrtPriceBX96)
             (sqrtPriceAX96, sqrtPriceBX96) = (sqrtPriceBX96, sqrtPriceAX96);
-
+        //amount1 = L*(pB-pA)
+        //需要除去定点数
         amount1 = mulDivRoundingUp(
             liquidity,
             (sqrtPriceBX96 - sqrtPriceAX96),
@@ -50,6 +53,7 @@ library Math {
         uint256 amountIn,
         bool zeroForOne
     ) internal pure returns (uint160 sqrtPriceNextX96) {
+        //计算调整后的价格
         sqrtPriceNextX96 = zeroForOne
             ? getNextSqrtPriceFromAmount0RoundingUp(
                 sqrtPriceX96,
