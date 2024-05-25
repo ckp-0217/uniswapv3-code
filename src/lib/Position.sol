@@ -9,10 +9,10 @@ import "./LiquidityMath.sol";
 library Position {
     struct Info {
         uint128 liquidity;
-        uint256 feeGrowthInside0LastX128;
-        uint256 feeGrowthInside1LastX128;
-        uint128 tokensOwed0;
-        uint128 tokensOwed1;
+        uint256 feeGrowthInside0LastX128;//卖 累计手续费
+        uint256 feeGrowthInside1LastX128;//买 累计手续费
+        uint128 tokensOwed0;//存储的token0
+        uint128 tokensOwed1;//存储的token1
     }
 
     function get(
@@ -26,12 +26,14 @@ library Position {
         ];
     }
 
+    //更新流动性产生的手续费 手续费最终都增加到tokensOwed0
     function update(
         Info storage self,
         int128 liquidityDelta,
         uint256 feeGrowthInside0X128,
         uint256 feeGrowthInside1X128
     ) internal {
+        //计算产生的费用
         uint128 tokensOwed0 = uint128(
             PRBMath.mulDiv(
                 feeGrowthInside0X128 - self.feeGrowthInside0LastX128,
@@ -54,9 +56,11 @@ library Position {
         self.feeGrowthInside0LastX128 = feeGrowthInside0X128;
         self.feeGrowthInside1LastX128 = feeGrowthInside1X128;
 
-        if (tokensOwed0 > 0 || tokensOwed1 > 0) {
+        if (tokensOwed0 > 0) {
             self.tokensOwed0 += tokensOwed0;
-            self.tokensOwed1 += tokensOwed1;
+        }
+        if (tokensOwed1 > 0) {
+            self.tokensOwed0 += tokensOwed1;
         }
     }
 }

@@ -7,15 +7,15 @@ import "./Math.sol";
 library Tick {
     struct Info {
         bool initialized;
-        // total liquidity at tick
+        // 总的流动性 该tick是否可用
         uint128 liquidityGross;
-        // amount of liqudiity added or subtracted when tick is crossed
+        // 当cross时的流动性数量 左端为正 右端为负 穿入加上流动性 穿出减去流动性
         int128 liquidityNet;
         // fee growth on the other side of this tick (relative to the current tick)
         uint256 feeGrowthOutside0X128;
         uint256 feeGrowthOutside1X128;
     }
-
+    //触发mint和burn的时候 update流动性 同时判断flag
     function update(
         mapping(int24 => Tick.Info) storage self,
         int24 tick,
@@ -51,7 +51,7 @@ library Tick {
             ? int128(int256(tickInfo.liquidityNet) - liquidityDelta)
             : int128(int256(tickInfo.liquidityNet) + liquidityDelta);
     }
-
+    //cross tick
     function cross(
         mapping(int24 => Tick.Info) storage self,
         int24 tick,
@@ -68,6 +68,7 @@ library Tick {
         liquidityDelta = info.liquidityNet;
     }
 
+    //计算两个tick的手续费
     function getFeeGrowthInside(
         mapping(int24 => Tick.Info) storage self,
         int24 lowerTick_,
@@ -79,12 +80,14 @@ library Tick {
         internal
         view
         returns (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128)
-    {
+    {   
+        //获取两个tick
         Tick.Info storage lowerTick = self[lowerTick_];
         Tick.Info storage upperTick = self[upperTick_];
-
+        
         uint256 feeGrowthBelow0X128;
         uint256 feeGrowthBelow1X128;
+        //根据当前价格获取累计费率
         if (currentTick >= lowerTick_) {
             feeGrowthBelow0X128 = lowerTick.feeGrowthOutside0X128;
             feeGrowthBelow1X128 = lowerTick.feeGrowthOutside1X128;
@@ -110,7 +113,7 @@ library Tick {
                 feeGrowthGlobal0X128 -
                 upperTick.feeGrowthOutside1X128;
         }
-
+        //返回累计的手续费
         feeGrowthInside0X128 =
             feeGrowthGlobal0X128 -
             feeGrowthBelow0X128 -

@@ -135,7 +135,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         int24 upperTick;
         int128 liquidityDelta;
     }
-
+    // 根据区间 和 流动性 计算需要支出的token数量
     function _modifyPosition(ModifyPositionParams memory params)
         internal
         returns (
@@ -148,13 +148,13 @@ contract UniswapV3Pool is IUniswapV3Pool {
         Slot0 memory slot0_ = slot0;
         uint256 feeGrowthGlobal0X128_ = feeGrowthGlobal0X128;
         uint256 feeGrowthGlobal1X128_ = feeGrowthGlobal1X128;
-
+        // 获取当前区间用户的流动性
         position = positions.get(
             params.owner,
             params.lowerTick,
             params.upperTick
         );
-
+        // 更新tick 判断flag翻转
         bool flippedLower = ticks.update(
             params.lowerTick,
             slot0_.tick,
@@ -179,7 +179,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         if (flippedUpper) {
             tickBitmap.flipTick(params.upperTick, int24(tickSpacing));
         }
-
+        // 获取fee
         (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) = ticks
             .getFeeGrowthInside(
                 params.lowerTick,
@@ -241,7 +241,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         ) revert InvalidTickRange();
 
         if (amount == 0) revert ZeroLiquidity();
-
+        // 计算需要支出的数量
         (, int256 amount0Int, int256 amount1Int) = _modifyPosition(
             ModifyPositionParams({
                 owner: owner,
@@ -282,7 +282,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
             amount1
         );
     }
-
+    // 销毁流动性 将流动性移到手续费
     function burn(
         int24 lowerTick,
         int24 upperTick,
@@ -306,8 +306,8 @@ contract UniswapV3Pool is IUniswapV3Pool {
 
         if (amount0 > 0 || amount1 > 0) {
             (position.tokensOwed0, position.tokensOwed1) = (
-                position.tokensOwed0 + uint128(amount0),
-                position.tokensOwed1 + uint128(amount1)
+                position.tokensOwed0 + uint128(amount0) + uint128(amount1),
+                position.tokensOwed1
             );
         }
 
@@ -429,7 +429,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
                     step.feeAmount;
                 state.amountCalculated += step.amountOut;
             }
-
+            // 计算每单位流动性获得的手续费
             if (state.liquidity > 0) {
                 state.feeGrowthGlobalX128 += PRBMath.mulDiv(
                     step.feeAmount,
@@ -437,8 +437,9 @@ contract UniswapV3Pool is IUniswapV3Pool {
                     state.liquidity
                 );
             }
-
+            // 当价格达到边界 需要cross到下一个tick
             if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
+                // 获取下一个tick的流动性 并且在下一个tick中记录手续费 区分买卖收取的手续费
                 int128 liquidityDelta = ticks.cross(
                     step.nextTick,
                     (
@@ -452,28 +453,29 @@ contract UniswapV3Pool is IUniswapV3Pool {
                             : state.feeGrowthGlobalX128
                     )
                 );
-
+                // 如果是卖 说明流动性达到左边 加上相反的流动性
                 if (zeroForOne) liquidityDelta = -liquidityDelta;
 
                 state.liquidity = LiquidityMath.addLiquidity(
                     state.liquidity,
                     liquidityDelta
                 );
-
+                // 这里为0 说明没有其他流动性区间了
                 if (state.liquidity == 0) revert NotEnoughLiquidity();
-
+                // 卖： tick是变小 区间是左闭右开 需要减一到达下一个区间
                 state.tick = zeroForOne ? step.nextTick - 1 : step.nextTick;
             } else if (state.sqrtPriceX96 != step.sqrtPriceStartX96) {
+                // 价格没有到达边界 直接获取价格所在的tick
                 state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
             }
         }
-
+        // 更新价格 和 更新tick
         if (state.tick != slot0_.tick) {
             (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
         } else {
             slot0.sqrtPriceX96 = state.sqrtPriceX96;
         }
-
+        // 更新流动性
         if (liquidity_ != state.liquidity) liquidity = state.liquidity;
 
         if (zeroForOne) {
@@ -481,9 +483,10 @@ contract UniswapV3Pool is IUniswapV3Pool {
         } else {
             feeGrowthGlobal1X128 = state.feeGrowthGlobalX128;
         }
-
+        // 最终的数量
         (amount0, amount1) = zeroForOne
             ? (
+                // 收取已经成交部分 总数量-已经填充数量
                 int256(amountSpecified - state.amountSpecifiedRemaining),
                 -int256(state.amountCalculated)
             )
@@ -501,6 +504,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
                 amount1,
                 data
             );
+            // 金额校验
             if (balance0Before + uint256(amount0) > balance0())
                 revert InsufficientInputAmount();
         } else {
@@ -527,11 +531,6 @@ contract UniswapV3Pool is IUniswapV3Pool {
         );
     }
 
-    // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // 
-    // 
-    // INTERNAL
-    // 
-    // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // 
     function balance0() internal returns (uint256 balance) {
         balance = IERC20(token0).balanceOf(address(this));
     }
