@@ -355,51 +355,50 @@ contract UniswapV3Pool is IUniswapV3Pool {
     }
 
     function swap(
-        address recipient,
-        bool zeroForOne,
-        uint256 amountSpecified,
-        uint160 sqrtPriceLimitX96,
+        address recipient, // 接收方
+        bool zeroForOne, // false -买，true -卖
+        uint256 amountSpecified, // 数量
+        uint160 sqrtPriceLimitX96, // 滑点限价
         bytes calldata data
     ) public returns (int256 amount0, int256 amount1) {
-        // Caching for gas saving
         Slot0 memory slot0_ = slot0;
         uint128 liquidity_ = liquidity;
-
-        if (
+        // 根据买卖 检查当前限价
+        require(
             zeroForOne
-                ? sqrtPriceLimitX96 > slot0_.sqrtPriceX96 ||
-                    sqrtPriceLimitX96 < TickMath.MIN_SQRT_RATIO
-                : sqrtPriceLimitX96 < slot0_.sqrtPriceX96 &&
-                    sqrtPriceLimitX96 > TickMath.MAX_SQRT_RATIO
-        ) revert InvalidPriceLimit();
-
+                ? sqrtPriceLimitX96 < slot0_.sqrtPriceX96 &&
+                    sqrtPriceLimitX96 > TickMath.MIN_SQRT_RATIO
+                : sqrtPriceLimitX96 > slot0_.sqrtPriceX96 &&
+                    sqrtPriceLimitX96 < TickMath.MAX_SQRT_RATIO,
+            "SPL"
+        );
+        // 维护当前订单
         SwapState memory state = SwapState({
             amountSpecifiedRemaining: amountSpecified,
             amountCalculated: 0,
             sqrtPriceX96: slot0_.sqrtPriceX96,
             tick: slot0_.tick,
-            feeGrowthGlobalX128: zeroForOne
-                ? feeGrowthGlobal0X128
-                : feeGrowthGlobal1X128,
+            feeGrowthGlobalX128: feeGrowthGlobal0X128,
             liquidity: liquidity_
         });
-
+        // 循环兑换 直到订单填满或达到限价
         while (
             state.amountSpecifiedRemaining > 0 &&
             state.sqrtPriceX96 != sqrtPriceLimitX96
         ) {
+            // 兑换信息
             StepState memory step;
 
             step.sqrtPriceStartX96 = state.sqrtPriceX96;
-
+            // 获取下个有流动性的tick,或者是word的最后一个tick
             (step.nextTick, ) = tickBitmap.nextInitializedTickWithinOneWord(
                 state.tick,
                 int24(tickSpacing),
                 zeroForOne
             );
-
+            // 获取tick价格
             step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.nextTick);
-
+            // 计算兑换的 价格 数量和手续费
             (
                 state.sqrtPriceX96,
                 step.amountIn,
@@ -418,9 +417,18 @@ contract UniswapV3Pool is IUniswapV3Pool {
                 state.amountSpecifiedRemaining,
                 fee
             );
-
-            state.amountSpecifiedRemaining -= step.amountIn + step.feeAmount;
-            state.amountCalculated += step.amountOut;
+            // 订单状态更新 卖单扣除OUT 买单扣除IN
+            if (zeroForOne) {
+                // 卖单
+                state.amountSpecifiedRemaining -= step.amountIn;
+                state.amountCalculated += step.amountOut - step.feeAmount;
+            } else {
+                // 买单
+                state.amountSpecifiedRemaining -=
+                    step.amountIn +
+                    step.feeAmount;
+                state.amountCalculated += step.amountOut;
+            }
 
             if (state.liquidity > 0) {
                 state.feeGrowthGlobalX128 += PRBMath.mulDiv(
@@ -519,11 +527,11 @@ contract UniswapV3Pool is IUniswapV3Pool {
         );
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    //
+    // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // 
+    // 
     // INTERNAL
-    //
-    ////////////////////////////////////////////////////////////////////////////
+    // 
+    // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // 
     function balance0() internal returns (uint256 balance) {
         balance = IERC20(token0).balanceOf(address(this));
     }
