@@ -8,6 +8,7 @@ import "./interfaces/IUniswapV3MintCallback.sol";
 import "./interfaces/IUniswapV3Pool.sol";
 import "./interfaces/IUniswapV3PoolDeployer.sol";
 import "./interfaces/IUniswapV3SwapCallback.sol";
+import "./interfaces/IManagement.sol";
 
 import "./lib/FixedPoint128.sol";
 import "./lib/LiquidityMath.sol";
@@ -30,7 +31,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
     error InvalidTickRange();
     error NotEnoughLiquidity();
     error ZeroLiquidity();
-
+    error InvalidInvestor();
     event Burn(
         address indexed owner,
         int24 indexed tickLower,
@@ -75,9 +76,9 @@ contract UniswapV3Pool is IUniswapV3Pool {
     address public immutable token1;
     uint24 public immutable tickSpacing;
     uint24 public immutable fee;
-
     uint256 public feeGrowthGlobal0X128;
     uint256 public feeGrowthGlobal1X128;
+    IManagement public management;
 
     // First slot will contain essential data
     struct Slot0 {
@@ -121,6 +122,21 @@ contract UniswapV3Pool is IUniswapV3Pool {
         ).parameters();
     }
 
+    //检查白名单 trye-白名单或受限名单(卖出) false-白名单(买入,增减流动性)
+    function checkInvestor(bool zeroForOne, address investor)
+        public
+        view
+        returns (bool)
+    {
+        if (zeroForOne) {
+            return
+                management.isWhiteInvestor(investor) ||
+                management.isRestrictInvestor(investor);
+        } else {
+            return management.isWhiteInvestor(investor);
+        }
+    }
+
     function initialize(uint160 sqrtPriceX96) public {
         if (slot0.sqrtPriceX96 != 0) revert AlreadyInitialized();
 
@@ -135,6 +151,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         int24 upperTick;
         int128 liquidityDelta;
     }
+
     // 根据区间 和 流动性 计算需要支出的token数量
     function _modifyPosition(ModifyPositionParams memory params)
         internal
@@ -234,6 +251,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         uint128 amount,
         bytes calldata data
     ) external returns (uint256 amount0, uint256 amount1) {
+        if (checkInvestor(false, msg.sender)) revert InvalidInvestor();
         if (
             lowerTick >= upperTick ||
             lowerTick < TickMath.MIN_TICK ||
@@ -282,12 +300,14 @@ contract UniswapV3Pool is IUniswapV3Pool {
             amount1
         );
     }
+
     // 销毁流动性 将流动性移到手续费
     function burn(
         int24 lowerTick,
         int24 upperTick,
         uint128 amount
     ) public returns (uint256 amount0, uint256 amount1) {
+        if (checkInvestor(false, msg.sender)) revert InvalidInvestor();
         (
             Position.Info storage position,
             int256 amount0Int,
@@ -321,6 +341,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         uint128 amount0Requested,
         uint128 amount1Requested
     ) public returns (uint128 amount0, uint128 amount1) {
+        if (checkInvestor(false, recipient)) revert InvalidInvestor();
         Position.Info memory position = positions.get(
             msg.sender,
             lowerTick,
@@ -361,6 +382,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         uint160 sqrtPriceLimitX96, // 滑点限价
         bytes calldata data
     ) public returns (int256 amount0, int256 amount1) {
+        if (checkInvestor(zeroForOne, recipient)) revert InvalidInvestor();
         Slot0 memory slot0_ = slot0;
         uint128 liquidity_ = liquidity;
         // 根据买卖 检查当前限价
