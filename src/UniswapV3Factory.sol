@@ -13,56 +13,52 @@ contract UniswapV3Factory is IUniswapV3PoolDeployer {
     event PoolCreated(
         address indexed token0,
         address indexed token1,
-        uint24 indexed fee,
+        uint24 indexed tickSpacing,
+        uint24 fee,
+        uint24 platformFee,
         address pool
     );
 
     PoolParameters public parameters;
 
-    mapping(uint24 => uint24) public tickSpacings;
-    mapping(address => mapping(address => mapping(uint24 => address)))
-        public pools;
-
-    constructor() {
-        tickSpacings[500] = 10;
-        tickSpacings[3000] = 60;
-    }
-
     function createPool(
-        address tokenX,
-        address tokenY,
-        uint24 fee
+        string memory name,
+        address issuer,
+        address tokenA,
+        address tokenB,
+        address management,
+        uint256[] memory params //0-tickSpacings 0-fee 1-platformFee
     ) public returns (address pool) {
-        if (tokenX == tokenY) revert TokensMustBeDifferent();
-        if (tickSpacings[fee] == 0) revert UnsupportedTickSpacing();
-
-        (tokenX, tokenY) = tokenX < tokenY
-            ? (tokenX, tokenY)
-            : (tokenY, tokenX);
-
-        if (tokenX == address(0)) revert ZeroAddressNotAllowed();
-        if (pools[tokenX][tokenY][fee] != address(0))
-            revert PoolAlreadyExists();
+        if (tokenA == tokenB) revert TokensMustBeDifferent();
+        if (tokenA == address(0)) revert ZeroAddressNotAllowed();
+        uint24 tickSpacing_ = uint24(params[0]);
+        uint24 fee_ = uint24(params[1]);
+        uint24 platformFee_ = uint24(params[2]);
 
         parameters = PoolParameters({
             factory: address(this),
-            token0: tokenX,
-            token1: tokenY,
-            tickSpacing: tickSpacings[fee],
-            fee: fee
+            token0: tokenA,
+            token1: tokenB,
+            tickSpacing: tickSpacing_,
+            fee: fee_,
+            platformFee: platformFee_
         });
 
         pool = address(
             new UniswapV3Pool{
-                salt: keccak256(abi.encodePacked(tokenX, tokenY, fee))
+                salt: keccak256(abi.encodePacked(tokenA, tokenB))
             }()
         );
 
         delete parameters;
 
-        pools[tokenX][tokenY][fee] = pool;
-        pools[tokenY][tokenX][fee] = pool;
-
-        emit PoolCreated(tokenX, tokenY, fee, pool);
+        emit PoolCreated(
+            tokenA,
+            tokenB,
+            tickSpacing_,
+            fee_,
+            platformFee_,
+            pool
+        );
     }
 }

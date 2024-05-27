@@ -130,9 +130,14 @@ contract UniswapV3Pool is IUniswapV3Pool {
     }
 
     constructor() {
-        (factory, token0, token1, tickSpacing, fee) = IUniswapV3PoolDeployer(
-            msg.sender
-        ).parameters();
+        (
+            factory,
+            token0,
+            token1,
+            tickSpacing,
+            fee,
+            platformFee
+        ) = IUniswapV3PoolDeployer(msg.sender).parameters();
     }
 
     //检查白名单 trye-白名单或受限名单(卖出) false-白名单(买入,增减流动性)
