@@ -21,7 +21,7 @@ contract UniswapV3Factory is IUniswapV3PoolDeployer {
 
     PoolParameters public parameters;
 
-    function createPool(
+    function createAMMPair(
         string memory name,
         address issuer,
         address tokenA,
@@ -34,11 +34,20 @@ contract UniswapV3Factory is IUniswapV3PoolDeployer {
         uint24 tickSpacing_ = uint24(params[0]);
         uint24 fee_ = uint24(params[1]);
         uint24 platformFee_ = uint24(params[2]);
-
+        // string memory name,
+        // address issuer,
+        // address token0,
+        // address token1,
+        // address management,
+        // uint24 tickSpacing,
+        // uint24 fee,
+        // uint24 platformFee
         parameters = PoolParameters({
-            factory: address(this),
+            name: name,
+            issuer: issuer,
             token0: tokenA,
             token1: tokenB,
+            management: management,
             tickSpacing: tickSpacing_,
             fee: fee_,
             platformFee: platformFee_

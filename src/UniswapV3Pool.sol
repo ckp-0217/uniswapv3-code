@@ -72,16 +72,18 @@ contract UniswapV3Pool is IUniswapV3Pool {
     );
     event TransferPlatformFee(address indexed feeAddress, uint256 feeRequested);
     // Pool parameters
-    address public immutable factory;
     address public immutable token0; // UT
     address public immutable token1; // ST
     uint24 public immutable tickSpacing;
-    uint24 public immutable fee;
+    uint24 public fee;
     uint24 public platformFee;
-
+    string public name;
+    address public immutable issuer;
+    // uint256 public changeRange;          //涨跌幅
+    // uint256 public circuitTime;          //熔断时间
     uint256 public feeGrowthGlobal0X128;
     uint256 public feeGrowthGlobal1X128;
-    IManagement public management;
+    address public management;
     uint256 public platformFeeAmount;
 
     // First slot will contain essential data
@@ -123,7 +125,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
     mapping(bytes32 => Position.Info) public positions;
     modifier onlyContractManager() {
         require(
-            management.isContractManager(msg.sender),
+            IManagement(management).isContractManager(msg.sender),
             "Caller is not contract manager"
         );
         _;
@@ -131,12 +133,16 @@ contract UniswapV3Pool is IUniswapV3Pool {
 
     constructor() {
         (
-            factory,
+            name,
+            issuer,
             token0,
             token1,
+            management,
             tickSpacing,
             fee,
             platformFee
+            // changeRange,
+            // circuitTime
         ) = IUniswapV3PoolDeployer(msg.sender).parameters();
     }
 
@@ -148,10 +154,10 @@ contract UniswapV3Pool is IUniswapV3Pool {
     {
         if (zeroForOne) {
             return
-                management.isWhiteInvestor(investor) ||
-                management.isRestrictInvestor(investor);
+                IManagement(management).isWhiteInvestor(investor) ||
+                IManagement(management).isRestrictInvestor(investor);
         } else {
-            return management.isWhiteInvestor(investor);
+            return IManagement(management).isWhiteInvestor(investor);
         }
     }
 
@@ -603,7 +609,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
             : feeRequested;
         address feeAddress;
         if (amount > 0) {
-            feeAddress = management.platformFeeAddress();
+            feeAddress = IManagement(management).platformFeeAddress();
             if (amount == platformFeeAmount) amount--; //slot不为0 可以节省gas
             platformFeeAmount -= amount;
             TransferHelper.safeTransfer(token0, feeAddress, amount);
