@@ -10,7 +10,8 @@ library SwapMath {
         uint160 sqrtPriceTargetX96,
         uint128 liquidity,
         uint256 amountRemaining,
-        uint24 fee
+        uint24 fee,
+        uint24 platformFee
     )
         internal
         pure
@@ -18,7 +19,8 @@ library SwapMath {
             uint160 sqrtPriceNextX96,
             uint256 amountIn,
             uint256 amountOut,
-            uint256 feeAmount
+            uint256 feeAmount,
+            uint256 platformFeeAmount
         )
     {
         // 判断买卖方向
@@ -29,14 +31,19 @@ library SwapMath {
             amountRemainingLessFee = amountRemaining;
         } else {
             // 买单提前扣除手续费
-            amountRemainingLessFee = PRBMath.mulDiv(
+            feeAmount = Math.mulDivRoundingUp(amountRemaining, fee, 1e6);
+            platformFeeAmount = Math.mulDivRoundingUp(
                 amountRemaining,
-                1e6 - fee,
+                platformFee,
                 1e6
             );
+            amountRemainingLessFee =
+                amountRemaining -
+                feeAmount -
+                platformFeeAmount;
         }
 
-        // 根据方法计算可以销毁多少In
+        // 根据方法计算可以填充多少In
         amountIn = zeroForOne
             ? Math.calcAmount0Delta(
                 sqrtPriceCurrentX96,
@@ -53,9 +60,9 @@ library SwapMath {
         if (amountRemainingLessFee >= amountIn)
             // 如果In数量不足够填充全部订单 说明消耗当前区间所有流动性 价格达到区间边缘
             sqrtPriceNextX96 = sqrtPriceTargetX96;
+        else
             // 如果In数量足够填充全部订单 说明价格会在区间内部
             // 计算出兑换后的价格
-        else
             sqrtPriceNextX96 = Math.getNextSqrtPriceFromInput(
                 sqrtPriceCurrentX96,
                 liquidity,
@@ -64,7 +71,7 @@ library SwapMath {
             );
         //判断价格是否达到区间边缘,也就是消耗了当前所有的流动性
         bool max = sqrtPriceNextX96 == sqrtPriceTargetX96;
-        //根据 计算 到兑换的价格可以提供多少的In(扣除手续费后)和Out
+        //计算 到兑换的价格可以提供多少的In和Out
         if (zeroForOne) {
             amountIn = max
                 ? amountIn
@@ -98,23 +105,29 @@ library SwapMath {
         }
 
         if (zeroForOne) {
-            //卖单手续费计算
-            uint256 amountOutLessFee = PRBMath.mulDiv(
-                amountOut,
-                1e6 - fee,
+            // 卖单手续费计算
+            feeAmount = Math.mulDivRoundingUp(amountOut, fee, 1e6);
+            platformFeeAmount = Math.mulDivRoundingUp(
+                amountOut - feeAmount,
+                platformFee,
                 1e6
             );
-            feeAmount = amountOutLessFee - amountOut;
-            amountOut = amountOutLessFee;
         } else {
-            //买单手续费计算
-            //这里的amountIn 是扣除了手续费之后的
-            //如果没有达到价格边缘 实际收取的手续费 返回差额
-            //达到了边缘 根据In反推手续费
-            if (!max) {
-                feeAmount = amountRemaining - amountIn;
-            } else {
-                feeAmount = Math.mulDivRoundingUp(amountIn, fee, 1e6 - fee);
+            // 买单手续费计算
+            // 这里的amountIn 是扣除了手续费之后的
+            // 如果没有达到价格边缘 直接返回前面计算好的流动性
+            if (max) {
+                //达到了边缘 根据In反推手续费
+                feeAmount = Math.mulDivRoundingUp(
+                    amountIn,
+                    fee,
+                    1e6 - fee - platformFee
+                );
+                platformFeeAmount = Math.mulDivRoundingUp(
+                    amountIn,
+                    platformFee,
+                    1e6 - fee - platformFee
+                );
             }
         }
     }

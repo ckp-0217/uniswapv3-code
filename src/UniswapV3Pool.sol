@@ -18,6 +18,7 @@ import "./lib/SwapMath.sol";
 import "./lib/Tick.sol";
 import "./lib/TickBitmap.sol";
 import "./lib/TickMath.sol";
+import "./lib/TransferHelper.sol";
 
 contract UniswapV3Pool is IUniswapV3Pool {
     using Tick for mapping(int24 => Tick.Info);
@@ -72,13 +73,16 @@ contract UniswapV3Pool is IUniswapV3Pool {
 
     // Pool parameters
     address public immutable factory;
-    address public immutable token0;
-    address public immutable token1;
+    address public immutable token0; // UT
+    address public immutable token1; // ST
     uint24 public immutable tickSpacing;
     uint24 public immutable fee;
+    uint24 public platformFee;
+
     uint256 public feeGrowthGlobal0X128;
     uint256 public feeGrowthGlobal1X128;
     IManagement public management;
+    uint256 public platformFeeAmount;
 
     // First slot will contain essential data
     struct Slot0 {
@@ -94,6 +98,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         uint160 sqrtPriceX96;
         int24 tick;
         uint256 feeGrowthGlobalX128;
+        uint128 platformFee;
         uint128 liquidity;
     }
 
@@ -105,6 +110,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         uint256 amountIn;
         uint256 amountOut;
         uint256 feeAmount;
+        uint256 platformFeeAmount;
     }
 
     Slot0 public slot0;
@@ -115,6 +121,13 @@ contract UniswapV3Pool is IUniswapV3Pool {
     mapping(int24 => Tick.Info) public ticks;
     mapping(int16 => uint256) public tickBitmap;
     mapping(bytes32 => Position.Info) public positions;
+    modifier onlyContractManager() {
+        require(
+            management.isContractManager(msg.sender),
+            "Caller is not contract manager"
+        );
+        _;
+    }
 
     constructor() {
         (factory, token0, token1, tickSpacing, fee) = IUniswapV3PoolDeployer(
@@ -357,12 +370,12 @@ contract UniswapV3Pool is IUniswapV3Pool {
 
         if (amount0 > 0) {
             position.tokensOwed0 -= amount0;
-            IERC20(token0).transfer(recipient, amount0);
+            TransferHelper.safeTransfer(token0, recipient, amount0);
         }
 
         if (amount1 > 0) {
             position.tokensOwed1 -= amount1;
-            IERC20(token1).transfer(recipient, amount1);
+            TransferHelper.safeTransfer(token1, recipient, amount1);
         }
 
         emit Collect(
@@ -400,7 +413,10 @@ contract UniswapV3Pool is IUniswapV3Pool {
             amountCalculated: 0,
             sqrtPriceX96: slot0_.sqrtPriceX96,
             tick: slot0_.tick,
-            feeGrowthGlobalX128: feeGrowthGlobal0X128,
+            feeGrowthGlobalX128: zeroForOne
+                ? feeGrowthGlobal0X128
+                : feeGrowthGlobal1X128,
+            platformFee: 0,
             liquidity: liquidity_
         });
         // 循环兑换 直到订单填满或达到限价
@@ -425,7 +441,8 @@ contract UniswapV3Pool is IUniswapV3Pool {
                 state.sqrtPriceX96,
                 step.amountIn,
                 step.amountOut,
-                step.feeAmount
+                step.feeAmount,
+                step.platformFeeAmount
             ) = SwapMath.computeSwapStep(
                 state.sqrtPriceX96,
                 (
@@ -437,20 +454,27 @@ contract UniswapV3Pool is IUniswapV3Pool {
                     : step.sqrtPriceNextX96,
                 state.liquidity,
                 state.amountSpecifiedRemaining,
-                fee
+                fee,
+                platformFee
             );
             // 订单状态更新 卖单扣除OUT 买单扣除IN
             if (zeroForOne) {
                 // 卖单
                 state.amountSpecifiedRemaining -= step.amountIn;
-                state.amountCalculated += step.amountOut - step.feeAmount;
+                state.amountCalculated +=
+                    step.amountOut -
+                    step.feeAmount -
+                    step.platformFeeAmount;
             } else {
                 // 买单
                 state.amountSpecifiedRemaining -=
                     step.amountIn +
-                    step.feeAmount;
+                    step.feeAmount +
+                    step.platformFeeAmount;
                 state.amountCalculated += step.amountOut;
             }
+            //累计协议的手续费
+            state.platformFee += uint128(step.platformFeeAmount);
             // 计算每单位流动性获得的手续费
             if (state.liquidity > 0) {
                 state.feeGrowthGlobalX128 += PRBMath.mulDiv(
@@ -499,12 +523,13 @@ contract UniswapV3Pool is IUniswapV3Pool {
         }
         // 更新流动性
         if (liquidity_ != state.liquidity) liquidity = state.liquidity;
-
+        // 更新手续费
         if (zeroForOne) {
             feeGrowthGlobal0X128 = state.feeGrowthGlobalX128;
         } else {
             feeGrowthGlobal1X128 = state.feeGrowthGlobalX128;
         }
+        platformFeeAmount += state.platformFeeAmount;
         // 最终的数量
         (amount0, amount1) = zeroForOne
             ? (
@@ -518,7 +543,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
             );
 
         if (zeroForOne) {
-            IERC20(token1).transfer(recipient, uint256(-amount1));
+            if (amount1 < 0) TransferHelper.safeTransfer(token1, recipient, uint256(-amount1));
 
             uint256 balance0Before = balance0();
             IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(
@@ -530,7 +555,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
             if (balance0Before + uint256(amount0) > balance0())
                 revert InsufficientInputAmount();
         } else {
-            IERC20(token0).transfer(recipient, uint256(-amount0));
+            if (amount0 < 0) TransferHelper.safeTransfer(token0, recipient, uint256(-amount0));
 
             uint256 balance1Before = balance1();
             IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(
@@ -551,6 +576,24 @@ contract UniswapV3Pool is IUniswapV3Pool {
             state.liquidity,
             slot0.tick
         );
+    }
+
+    function transferPlatformFee(uint256 feeRequested)
+        external
+        onlyContractManager
+        returns (uint256 feeRequested)
+    {
+        feeRequested = feeRequested > platformFeeAmount
+            ? platformFeeAmount
+            : feeRequested;
+        address recipient = management.platformFeeAddress();
+        if (feeRequested > 0) {
+            if (feeRequested == platformFeeAmount) feeRequested--; //slot不为0 可以节省gas
+            platformFeeAmount -= feeRequested;
+            TransferHelper.safeTransfer(token0, recipient, amount0);
+        }
+
+        emit TransferPlatformFee(msg.sender, recipient, amount0, amount1);
     }
 
     function balance0() internal returns (uint256 balance) {
