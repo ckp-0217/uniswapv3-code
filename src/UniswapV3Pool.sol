@@ -70,7 +70,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         uint128 liquidity,
         int24 tick
     );
-
+    event TransferPlatformFee(address indexed feeAddress, uint256 feeRequested);
     // Pool parameters
     address public immutable factory;
     address public immutable token0; // UT
@@ -529,7 +529,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
         } else {
             feeGrowthGlobal1X128 = state.feeGrowthGlobalX128;
         }
-        platformFeeAmount += state.platformFeeAmount;
+        platformFeeAmount += state.platformFee;
         // 最终的数量
         (amount0, amount1) = zeroForOne
             ? (
@@ -543,7 +543,12 @@ contract UniswapV3Pool is IUniswapV3Pool {
             );
 
         if (zeroForOne) {
-            if (amount1 < 0) TransferHelper.safeTransfer(token1, recipient, uint256(-amount1));
+            if (amount1 < 0)
+                TransferHelper.safeTransfer(
+                    token1,
+                    recipient,
+                    uint256(-amount1)
+                );
 
             uint256 balance0Before = balance0();
             IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(
@@ -555,7 +560,12 @@ contract UniswapV3Pool is IUniswapV3Pool {
             if (balance0Before + uint256(amount0) > balance0())
                 revert InsufficientInputAmount();
         } else {
-            if (amount0 < 0) TransferHelper.safeTransfer(token0, recipient, uint256(-amount0));
+            if (amount0 < 0)
+                TransferHelper.safeTransfer(
+                    token0,
+                    recipient,
+                    uint256(-amount0)
+                );
 
             uint256 balance1Before = balance1();
             IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(
@@ -581,19 +591,20 @@ contract UniswapV3Pool is IUniswapV3Pool {
     function transferPlatformFee(uint256 feeRequested)
         external
         onlyContractManager
-        returns (uint256 feeRequested)
+        returns (uint256 amount)
     {
-        feeRequested = feeRequested > platformFeeAmount
+        amount = feeRequested > platformFeeAmount
             ? platformFeeAmount
             : feeRequested;
-        address recipient = management.platformFeeAddress();
-        if (feeRequested > 0) {
-            if (feeRequested == platformFeeAmount) feeRequested--; //slot不为0 可以节省gas
-            platformFeeAmount -= feeRequested;
-            TransferHelper.safeTransfer(token0, recipient, amount0);
+        address feeAddress;
+        if (amount > 0) {
+            feeAddress = management.platformFeeAddress();
+            if (amount == platformFeeAmount) amount--; //slot不为0 可以节省gas
+            platformFeeAmount -= amount;
+            TransferHelper.safeTransfer(token0, feeAddress, amount);
         }
 
-        emit TransferPlatformFee(msg.sender, recipient, amount0, amount1);
+        emit TransferPlatformFee(feeAddress, amount);
     }
 
     function balance0() internal returns (uint256 balance) {
