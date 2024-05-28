@@ -10,13 +10,20 @@ interface IUniswapV3Pool {
 
     function slot0() external view returns (uint160 sqrtPriceX96, int24 tick);
 
+    function name() external view returns (string memory);
+
+    function issuer() external view returns (address);
+
     function token0() external view returns (address);
 
     function token1() external view returns (address);
 
+    function management() external view returns (address);
+
     function tickSpacing() external view returns (uint24);
 
     function fee() external view returns (uint24);
+
     function platformFee() external view returns (uint24);
 
     function mint(

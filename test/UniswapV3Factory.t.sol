@@ -13,59 +13,90 @@ contract UniswapV3FactoryTest is Test, TestUtils {
     ERC20Mintable weth;
     ERC20Mintable usdc;
     UniswapV3Factory factory;
+    string name;
+    address issuer;
+    address management;
+    uint256[] params;
 
     function setUp() public {
+        name = "usdc-weth";
+        issuer = 0x0000000000000000000000000000000000000000;
         weth = new ERC20Mintable("Ether", "ETH", 18);
         usdc = new ERC20Mintable("USDC", "USDC", 18);
         factory = new UniswapV3Factory();
+        management = 0x0000000000000000000000000000000000000001;
+        params[0] = 10;
+        params[1] = 2000; //0.2%
+        params[2] = 1000; //0.1%
     }
 
-    function testCreatePool() public {
-        address poolAddress = factory.createPool(
-            address(weth),
+    function testcreateAMMPair() public {
+        address poolAddress = factory.createAMMPair(
+            name,
+            issuer,
             address(usdc),
-            500
+            address(weth),
+            management,
+            params
         );
 
         IUniswapV3Pool pool = IUniswapV3Pool(poolAddress);
 
-        assertEq(
-            factory.pools(address(usdc), address(weth), 500),
-            poolAddress,
-            "invalid pool address in the registry"
-        );
-
-        assertEq(
-            factory.pools(address(weth), address(usdc), 500),
-            poolAddress,
-            "invalid pool address in the registry (reverse order)"
-        );
-
-        assertEq(pool.factory(), address(factory), "invalid factory address");
+        assertEq(pool.name(), name, "invalid name ");
+        assertEq(pool.issuer(), issuer, "invalid issuer address");
         assertEq(pool.token0(), address(usdc), "invalid weth address");
         assertEq(pool.token1(), address(weth), "invalid usdc address");
+        assertEq(pool.management(), management, "invalid management address");
         assertEq(pool.tickSpacing(), 10, "invalid tick spacing");
-        assertEq(pool.fee(), 500, "invalid fee");
+        assertEq(pool.fee(), 2000, "invalid fee");
+        assertEq(pool.platformFee(), 2000, "invalid platformFee");
 
         (uint160 sqrtPriceX96, int24 tick) = pool.slot0();
         assertEq(sqrtPriceX96, 0, "invalid sqrtPriceX96");
         assertEq(tick, 0, "invalid tick");
     }
 
-    function testCreatePoolIdenticalTokens() public {
+    function testcreateAMMPairIdenticalTokens() public {
         vm.expectRevert(encodeError("TokensMustBeDifferent()"));
-        factory.createPool(address(weth), address(weth), 500);
+        factory.createAMMPair(
+            name,
+            issuer,
+            address(usdc),
+            address(weth),
+            management,
+            params
+        );
     }
 
     function testCreateZeroTokenAddress() public {
         vm.expectRevert(encodeError("ZeroAddressNotAllowed()"));
-        factory.createPool(address(weth), address(0), 500);
+        factory.createAMMPair(
+            name,
+            issuer,
+            address(usdc),
+            address(weth),
+            management,
+            params
+        );
     }
 
     function testCreateAlreadyExists() public {
-        factory.createPool(address(weth), address(usdc), 500);
-
+        factory.createAMMPair(
+            name,
+            issuer,
+            address(usdc),
+            address(weth),
+            management,
+            params
+        );
         vm.expectRevert(encodeError("PoolAlreadyExists()"));
-        factory.createPool(address(weth), address(usdc), 500);
+        factory.createAMMPair(
+            name,
+            issuer,
+            address(usdc),
+            address(weth),
+            management,
+            params
+        );
     }
 }

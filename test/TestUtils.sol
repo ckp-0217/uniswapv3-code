@@ -14,13 +14,6 @@ import "./ERC20Mintable.sol";
 import "./Assertions.sol";
 
 abstract contract TestUtils is Test, Assertions {
-    mapping(uint24 => uint24) internal tickSpacings;
-
-    constructor() {
-        tickSpacings[500] = 10;
-        tickSpacings[3000] = 60;
-    }
-
     function divRound(int128 x, int128 y)
         internal
         pure
@@ -127,17 +120,14 @@ abstract contract TestUtils is Test, Assertions {
     }
 
     function mintParams(
-        address tokenA,
-        address tokenB,
+        address poolAddress,
         uint256 lowerPrice,
         uint256 upperPrice,
         uint256 amount0,
         uint256 amount1
     ) internal pure returns (IUniswapV3Manager.MintParams memory params) {
         params = IUniswapV3Manager.MintParams({
-            tokenA: tokenA,
-            tokenB: tokenB,
-            fee: 3000,
+            poolAddress: poolAddress,
             lowerTick: tick60(lowerPrice),
             upperTick: tick60(upperPrice),
             amount0Desired: amount0,
@@ -147,36 +137,26 @@ abstract contract TestUtils is Test, Assertions {
         });
     }
 
-    function mintParams(
-        address tokenA,
-        address tokenB,
-        uint160 lowerSqrtP,
-        uint160 upperSqrtP,
-        uint256 amount0,
-        uint256 amount1,
-        uint24 fee
-    ) internal view returns (IUniswapV3Manager.MintParams memory params) {
-        params = IUniswapV3Manager.MintParams({
-            tokenA: tokenA,
-            tokenB: tokenB,
-            fee: fee,
-            lowerTick: sqrtPToNearestTick(lowerSqrtP, tickSpacings[fee]),
-            upperTick: sqrtPToNearestTick(upperSqrtP, tickSpacings[fee]),
-            amount0Desired: amount0,
-            amount1Desired: amount1,
-            amount0Min: 0,
-            amount1Min: 0
-        });
-    }
-
     function deployPool(
         UniswapV3Factory factory,
-        address token0,
-        address token1,
-        uint24 fee,
-        uint256 currentPrice
+        uint256 currentPrice,
+        string memory name,
+        address issuer,
+        address tokenA,
+        address tokenB,
+        address management,
+        uint256[] memory params //0-tickSpacings 0-fee 1-platformFee
     ) internal returns (UniswapV3Pool pool) {
-        pool = UniswapV3Pool(factory.createPool(token0, token1, fee));
+        pool = UniswapV3Pool(
+            factory.createAMMPair(
+                name,
+                issuer,
+                tokenA,
+                tokenB,
+                management,
+                params
+            )
+        );
         pool.initialize(sqrtP(currentPrice));
     }
 }

@@ -3,9 +3,7 @@ pragma solidity ^0.8.14;
 
 interface IUniswapV3Manager {
     struct MintParams {
-        address tokenA;
-        address tokenB;
-        uint24 fee;
+        address poolAddress;
         int24 lowerTick;
         int24 upperTick;
         uint256 amount0Desired;
@@ -15,18 +13,10 @@ interface IUniswapV3Manager {
     }
 
     struct SwapSingleParams {
-        address tokenIn;
-        address tokenOut;
-        uint24 fee;
+        address poolAddress;
+        bool zeroForOne;
         uint256 amountIn;
         uint160 sqrtPriceLimitX96;
-    }
-
-    struct SwapParams {
-        bytes path;
-        address recipient;
-        uint256 amountIn;
-        uint256 minAmountOut;
     }
 
     struct SwapCallbackData {

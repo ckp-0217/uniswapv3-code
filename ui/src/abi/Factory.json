@@ -78,7 +78,7 @@
         "type": "uint24"
       }
     ],
-    "name": "createPool",
+    "name": "createAMMPair",
     "outputs": [
       {
         "internalType": "address",
